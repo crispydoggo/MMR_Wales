@@ -1,0 +1,242 @@
+---
+title: "The effect of misinformation on vaccine uptake: the case of South Wales"
+author: "Jaakko"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
+output: 
+  html_document:
+    toc: TRUE
+    toc_depth: 3
+    toc_float: 
+      collapsed: TRUE
+      smooth_scroll: TRUE
+    number_sections: FALSE
+
+date: "`r format(Sys.time(), '%d %B %Y')`"
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.align = 'center', echo = TRUE)
+
+rm(list = ls())
+
+# ========================
+# Libraries
+# ========================
+
+library(tidyverse)
+library(haven)
+library(readxl)
+library(XLConnect)
+library(zoo)
+library(xts)
+
+# ========================
+# Data import
+# ========================
+
+vaccine <- read_dta("data_final.dta")
+pop <- read_xlsx("uk_population.xlsx")
+cases <- read_xlsx("uk_measles_cases.xlsx")
+
+vaccine <- vaccine %>% 
+      mutate( time = as.yearqtr( paste0(year, "-0", quarter )   )  )
+
+
+# ===============
+# Functions
+# ===============
+
+disperse <- function( population){
+  
+  # 1) Initialize the output
+  
+  output <- data.frame()
+  
+  
+  # 2) We set the data set for the difference of population between census 
+  
+  aux <- pop %>%  
+    mutate( diff_year = lead(year) - year ) 
+  
+
+  # 3) calculates the population difference 
+  
+  for( i in 1:(ncol(aux) - 2)){
+    
+    varname <- paste0( "diff_", names(aux[,1+i]) )
+    
+    aux[[varname]] <- unlist( (lead(aux[,1+i]) - aux[,1+i])/aux[,12]   ) 
+      
+  }
+  
+  # 4) We filter for the census that had more than a year apart
+    
+  aux <- aux %>%  
+    filter( diff_year > 1  )
+  
+  # 5)  We add the missing yearly population
+  
+  # For each census 
+  
+  
+  for( m in 1:nrow(aux)){
+    
+    aux_1 = aux[m,]
+    
+    year_d <- aux_1$year:(aux_1$year + aux_1$diff_year - 1)
+    
+    aux_2 <- data.frame(nk = numeric(aux_1$diff_year))
+      
+    aux_2 <- mutate(aux_2, year = year_d )
+    
+    # For each zone 
+    
+    for( j in 1:10){
+      
+      population <- c(as.numeric(unlist(aux_1[, 1 + j ])), numeric(aux_1$diff_year - 1))
+      
+      # Fill yearly population 
+      
+      for( k in 2:(aux_1$diff_year)  ){
+        
+        population[k] <- population[k-1] + as.numeric(unlist(aux_1[, 12 + j ]))
+        
+      }
+      
+      
+      # Add the variables
+      
+      varname <- names(aux_1[,1+j])
+      
+      aux_2[[varname]] <- population
+      
+      
+    }
+    
+    
+    # Set data ready for import
+    if( m > 1){
+      
+      output <- rbind(output, aux_2)
+      
+    } else {
+      
+      output <- aux_2
+    }
+
+    
+  }
+  
+  return(output)
+}
+
+
+```
+
+## 1. Introduction
+
+"The spread of SARS-CoV-2, the causative agent of COVID-19, has resulted in an unprecedented global public health and economic crisis" ^[[Loomba, Sahil, et al. "Measuring the Impact of COVID-19 Vaccine Misinformation on Vaccination Intent in the UK and USA." Nature News, Nature Publishing Group, 5 Feb. 2021](https://www.nature.com/articles/s41562-021-01056-1)]. As a result, the World Health Organization (WHO) declared a pandemic on 11 March 2020. The development of COVID-19 vaccines has been a significant undertaking in fighting the disease; nevertheless, as countries developed vaccines, misinformation spread rapidly through online channels such as news outlets, websites, and social media. ^[ [Garett, Renee, and Sean D Young. "Online Misinformation and Vaccine Hesitancy." Translational Behavioral Medicine, U.S. National Library of Medicine, 14 Dec. 2021](https://pubmed.ncbi.nlm.nih.gov/34529080/)]
+
+The seriousness of misinformation relies on the public's vaccine hesitancy; misinformation motivates skepticism towards vaccines and ultimately hesitation on vaccine uptake ^[[Singh, Karandeep, et al. "Misinformation, Believability, and Vaccine Acceptance over 40 Countries: Takeaways from the Initial Phase of the COVID-19 Infodemic." PLOS ONE, Public Library of Science, 9 Feb. 2022]( https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0263381)]. Vaccine hesitancy plays an essential role in decreasing vaccination rates and is considered a top ten global threat to public health by WHO ^[ [Garett, Renee, and Sean D Young. "Online Misinformation and Vaccine Hesitancy." Translational Behavioral Medicine, U.S. National Library of Medicine, 14 Dec. 2021](https://pubmed.ncbi.nlm.nih.gov/34529080/)]. Some countries are currently addressing the misinformation issue, but the effort might not be sufficient.
+
+To understand the severeness of misinformation, we will study the case of Wales where a local newspaper set a local media campaign against the measles, mumps, and rubella (MMR) vaccine in 1997. 
+
+## 2. The case of Wales
+
+Since July 1997 a proacted campaign against the MMR vaccine has been run by the South Wales Evening Post, an evening newspaper sold in parts of two Health Authority areas: Morgannwg and Dyfed Powys ^[  [ Mason, B W, and P D Donnelly. “Impact of a Local Newspaper Campaign on the Uptake of the Measles Mumps and Rubella Vaccine.” Journal of Epidemiology and Community Health, BMJ Group, June 2000.]( https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1731691/ )  ]. Over three months the paper published various resources that questioned the MMR vaccine safety, specifically: 5 front-page headlines, 3 opinion articles, and 18 other articles ^[  [ McCartney, Margaret. “MMR, Measles, and the South Wales Evening Post.” The BMJ, British Medical Journal Publishing Group, 22 Apr. 2013.](https://www.bmj.com/content/346/bmj.f2598 )   ].
+
+
+Years later, in 2013, there was a measles outbreak in Wales, and in 2018  WHO Europe announced that the United Kingdom (UK) lost the measles elimination status in 2018 ^[ [Public Health Wales. “UK Loses WHO Measles Elimination Status, but Cases Remain Low in Wales.” Public Health Wales.](https://phw.nhs.wales/news/uk-loses-who-measles-elimination-status-but-cases-remain-low-in-wales/)  ].
+
+
+```{r , echo = FALSE}
+
+tot_pop <- disperse(pop)
+
+tot_pop <- tot_pop %>% 
+          select( -nk) %>% 
+          rbind(filter(pop, year > 2014)) %>% 
+          filter( year > 1995 )
+
+rate <- cases %>% 
+        filter(age_group == "total" , year < 2021) %>% 
+        select( -age_group, -total) 
+
+for( i in 2:ncol(rate)){
+  
+  rate[, i] <- rate[,i] / tot_pop[,i] * 100000
+}
+
+graph <- rate %>% 
+        gather( key = zone, value = rate_mmr, east_midlands:wales) %>% 
+        mutate( zone = case_when(
+          zone == "east_midlands" ~  "East Midlands",
+          zone == "east_of_england" ~ "East of England",
+          zone == "london" ~  "London",
+          zone == "south_east" ~ "South East",
+          zone == "south_west" ~ "South West",
+          zone == "wales" ~ "Wales",
+          zone == "west_midlands" ~ "West Midlands"
+        ))
+
+
+ggplot( graph, aes( x = year, y = rate_mmr , color = zone   )) + 
+      geom_line() +
+      labs(y = "Rate of measles cases per 100,000 population", 
+           x = "", 
+           title = "Wales had the highest rate of measles cases in the nearby districts", 
+           colour = NULL, 
+           caption = " Source: Public Health of England 2021") +
+      theme_light() +
+      theme(plot.title = element_text(face = "bold", colour = "Black", ),
+            legend.title = NULL,
+            legend.background = element_rect(color = "#f0f2ee")) 
+
+
+```
+
+Brendan Mason and Peter Donnelly investigated MMR uptake in parts of two health authority areas, Morgannwg and Dyfed Powys, where the South Wales Evening Post was sold in response to the outbreak. They found that the uptake of MMR vaccine in Wales before the campaign was 89.2% and fell to 86.8% a year later. They concluded that the South Wales Evening Post campaign had a measurable and unhelpful impact over and above any adverse national publicity. However, as an observational study, it could not show a causal relation. 
+
+Nevertheless, by inspecting the vaccine uptake rate between the various health trusts in wales and separating them by exposure to the local media campaign, we can observe that there might indeed be a causal effect. (check narrative what do we mean by causal effect?)
+
+```{r, echo = FALSE}
+
+ggplot( filter(vaccine,Trust == "Bridgend & District NHS" | Trust == "Glan y Mor NHS")   , aes( x = time, y = MMR_percentage, color = factor(treatment)   )) +
+      geom_line( ) +
+      geom_vline(xintercept=1997, linetype="dashed", color = "black") +
+      labs(y = "Vaccine Uptake (%)", 
+           x = "", 
+           title = "Trend of Vaccine Uptake between health trusts of Wales", 
+           colour = NULL, 
+           caption = " Source: Public Health of England 2021") +
+      theme_light() +
+      theme(plot.title = element_text(face = "bold", colour = "Black", ),
+            legend.title = NULL,
+            legend.background = element_rect(color = "#f0f2ee")) 
+
+```
+
+Our endeavor is to carry on Mason and Donnelly's work and further show a causal relation with a differences-in-differences model.
+
+## 3. Classic Difference in Difference
+
+Here we make the classic 2x2, I'm still not sure about the name of the sections. Review extra
+
+
+## Useful anotations {.tabset .tabset-pills}
+
+### Tab 1 {-}
+
+### Tab 2 {-}
+
+### {.unlisted .toc-ignore -}
