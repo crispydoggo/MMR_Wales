@@ -26,6 +26,7 @@ text-align: justify}
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(fig.align = 'center', echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
 
 rm(list = ls())
 
@@ -57,6 +58,9 @@ vaccine <- vaccine %>%
 # ===============
 
 disperse <- function( population){
+  
+  # The function calculates the missing yearly population data of Wales by a ssuming a constant change between census
+  # ________________________________________________________________________________________________________________
   
   # 1) Initialize the output
   
@@ -145,18 +149,24 @@ disperse <- function( population){
 
 ## 1. Introduction
 
-"The spread of SARS-CoV-2, the causative agent of COVID-19, has resulted in an unprecedented global public health and economic crisis" ^[[Loomba, Sahil, et al. "Measuring the Impact of COVID-19 Vaccine Misinformation on Vaccination Intent in the UK and USA." Nature News, Nature Publishing Group, 5 Feb. 2021](https://www.nature.com/articles/s41562-021-01056-1)]. As a result, the World Health Organization (WHO) declared a pandemic on 11 March 2020. The development of COVID-19 vaccines has been a significant undertaking in fighting the disease; nevertheless, as countries developed vaccines, misinformation spread rapidly through online channels such as news outlets, websites, and social media. ^[ [Garett, Renee, and Sean D Young. "Online Misinformation and Vaccine Hesitancy." Translational Behavioral Medicine, U.S. National Library of Medicine, 14 Dec. 2021](https://pubmed.ncbi.nlm.nih.gov/34529080/)]
+"The spread of SARS-CoV-2, the causative agent of COVID-19, has resulted in an unprecedented global public health and economic crisis" ^[[Loomba et al., «Measuring the Impact of COVID-19 Vaccine Misinformation on Vaccination Intent in the UK and USA».](https://www.nature.com/articles/s41562-021-01056-1)]. As a result, the World Health Organization (WHO) declared a pandemic on 11 March 2020. The development of COVID-19 vaccines has been a significant undertaking in fighting the disease; nevertheless, as countries developed vaccines, misinformation spread rapidly through online channels such as news outlets, websites, and social media. ^[ [Garett y Young, «Online Misinformation and Vaccine Hesitancy».](https://pubmed.ncbi.nlm.nih.gov/34529080/)]
 
-The seriousness of misinformation relies on the public's vaccine hesitancy; misinformation motivates skepticism towards vaccines and ultimately hesitation on vaccine uptake ^[[Singh, Karandeep, et al. "Misinformation, Believability, and Vaccine Acceptance over 40 Countries: Takeaways from the Initial Phase of the COVID-19 Infodemic." PLOS ONE, Public Library of Science, 9 Feb. 2022]( https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0263381)]. Vaccine hesitancy plays an essential role in decreasing vaccination rates and is considered a top ten global threat to public health by WHO ^[ [Garett, Renee, and Sean D Young. "Online Misinformation and Vaccine Hesitancy." Translational Behavioral Medicine, U.S. National Library of Medicine, 14 Dec. 2021](https://pubmed.ncbi.nlm.nih.gov/34529080/)]. Some countries are currently addressing the misinformation issue, but the effort might not be sufficient.
+Covid-19 is not the only disease where misinformation has spread, "despite the availability of safe and effective vaccines; several European countries are experiencing outbreaks of vaccine-preventable diseases."^[European Observatory on Health Systems and Policies et al., «Increasing Vaccine Uptake».] The European Observatory on Health Systems and Policies conjectures that one reason for the outbreaks is extensive misinformation about vaccines.
 
-To understand the severeness of misinformation, we will study the case of Wales where a local newspaper set a local media campaign against the measles, mumps, and rubella (MMR) vaccine in 1997. 
+The seriousness of misinformation relies on the public's vaccine hesitancy; misinformation motivates skepticism towards vaccines and ultimately hesitation on vaccine uptake ^[[Singh et al., «Misinformation, Believability, and Vaccine Acceptance over 40 Countries».]( https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0263381)] causing the further spread of the disease. Therefore vaccine hesitancy plays an essential role in decreasing vaccination rates, and that's why Who considered it a top ten global threat to public health. ^[ [Garett y Young, «Online Misinformation and Vaccine Hesitancy».](https://pubmed.ncbi.nlm.nih.gov/34529080/)] Some countries are currently addressing the misinformation issue, but the effort might not be sufficient.
+
+The negative relationship between misinformation and vaccine hesitancy (or vaccine rate) is well studied. For example, Lyu, Seng, and Luo (2022)^[  [Lyu, Zheng, y Luo, «Misinformation versus Facts».](https://spj.sciencemag.org/journals/hds/2022/9858292/) ] analyze misinformation in the online discourses and discussions about the COVID-19 vaccines with Twitter and the data from the CDC COVID Data Tracker; Pierri, Francesco, Brea Perry, et al. (2021) also analyze the impact of online misinformation with Twitter^[ [Pierri et al., «The impact of online misinformation on US COVID-19 vaccinations».](https://arxiv.org/abs/2104.10635) ]. In addition, Wilson, Steven Lloyd, y Charles Wiysonge (2020) globally evaluated the effect of social media and online foreign disinformation campaigns on vaccination rates and attitudes towards vaccine safety^[[Wilson y Wiysonge, «Social Media and Vaccine Hesitancy».](https://doi.org/10.1136/bmjgh-2020-004206].
+
+Nevertheless, we have little evidence of a negative causal relationship between misinformation and vaccine hesitancy (or vaccine rate); the only study that we are aware of that quantifies the effect is the work of Loomba, Sahil, Alexandre de Figueiredo, et al. (2021). They conducted a randomized controlled trial in the UK and the USA to measure how exposure to online misinformation around COVID-19 vaccines affects intent to vaccinate to protect oneself or others^[ [Loomba et al., «Measuring the Impact of COVID-19 Vaccine Misinformation on Vaccination Intent in the UK and USA».](https://doi.org/10.1038/s41562-021-01056-1) ]. 
+
+To understand the severity of misinformation, we will contribute to the causal relationship literature by studying the case of Wales, where a local newspaper set a local media campaign against measles, mumps, and rubella (MMR) vaccine in 1997. 
 
 ## 2. The case of Wales
 
 Since July 1997 a proacted campaign against the MMR vaccine has been run by the South Wales Evening Post, an evening newspaper sold in parts of two Health Authority areas: Morgannwg and Dyfed Powys ^[  [ Mason, B W, and P D Donnelly. “Impact of a Local Newspaper Campaign on the Uptake of the Measles Mumps and Rubella Vaccine.” Journal of Epidemiology and Community Health, BMJ Group, June 2000.]( https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1731691/ )  ]. Over three months the paper published various resources that questioned the MMR vaccine safety, specifically: 5 front-page headlines, 3 opinion articles, and 18 other articles ^[  [ McCartney, Margaret. “MMR, Measles, and the South Wales Evening Post.” The BMJ, British Medical Journal Publishing Group, 22 Apr. 2013.](https://www.bmj.com/content/346/bmj.f2598 )   ].
 
 
-Years later, in 2013, there was a measles outbreak in Wales, and in 2018  WHO Europe announced that the United Kingdom (UK) lost the measles elimination status in 2018 ^[ [Public Health Wales. “UK Loses WHO Measles Elimination Status, but Cases Remain Low in Wales.” Public Health Wales.](https://phw.nhs.wales/news/uk-loses-who-measles-elimination-status-but-cases-remain-low-in-wales/)  ].
+Years later, in 2013, there was a measles outbreak in Wales, and in 2018  WHO Europe announced that the United Kingdom (UK) lost the measles elimination status ^[ [Public Health Wales. “UK Loses WHO Measles Elimination Status, but Cases Remain Low in Wales.” Public Health Wales.](https://phw.nhs.wales/news/uk-loses-who-measles-elimination-status-but-cases-remain-low-in-wales/)  ].
 
 
 ```{r , echo = FALSE}
@@ -192,46 +202,109 @@ graph <- rate %>%
 
 ggplot( graph, aes( x = year, y = rate_mmr , color = zone   )) + 
       geom_line() +
+      geom_point() +
       labs(y = "Rate of measles cases per 100,000 population", 
            x = "", 
-           title = "Wales had the highest rate of measles cases in the nearby districts", 
+           title = "Figure 1: Wales had the highest rate of measles cases in the nearby districts", 
+           subtitle = "Rate of Measles cases in England and Wales",
            colour = NULL, 
            caption = " Source: Public Health of England 2021") +
       theme_light() +
-      theme(plot.title = element_text(face = "bold", colour = "Black", ),
+      theme(plot.title = element_text(face = "bold", colour = "Black", size = 12),
             legend.title = NULL,
             legend.background = element_rect(color = "#f0f2ee")) 
 
 
 ```
 
-Brendan Mason and Peter Donnelly investigated MMR uptake in parts of two health authority areas, Morgannwg and Dyfed Powys, where the South Wales Evening Post was sold in response to the outbreak. They found that the uptake of MMR vaccine in Wales before the campaign was 89.2% and fell to 86.8% a year later. They concluded that the South Wales Evening Post campaign had a measurable and unhelpful impact over and above any adverse national publicity. However, as an observational study, it could not show a causal relation. 
+Brendan Mason and Peter Donnelly investigated MMR uptake in parts of two health authority areas, Morgannwg and Dyfed Powys, where the South Wales Evening Post was sold in response to the outbreak. They found that the uptake of MMR vaccine in Wales before the campaign was 89.2% and fell to 86.8% a year later ^[ [Mason, Brendan W, and Peter D Donnelly. "Impact of a Local Newspaper Campaign on the Uptake of the Measles Mumps and Rubella Vaccine." Journal of Epidemiology & Community Health, BMJ Publishing Group Ltd, 1 June 2000.]( https://jech.bmj.com/content/54/6/473)  ]. They concluded that the South Wales Evening Post campaign had a measurable and unhelpful impact over and above any adverse national publicity. However, it could not show a causal relation as an observational study. 
 
-Nevertheless, by inspecting the vaccine uptake rate between the various health trusts in wales and separating them by exposure to the local media campaign, we can observe that there might indeed be a causal effect. (check narrative what do we mean by causal effect?)
 
 ```{r, echo = FALSE}
 
-ggplot( filter(vaccine,Trust == "Bridgend & District NHS" | Trust == "Glan y Mor NHS")   , aes( x = time, y = MMR_percentage, color = factor(treatment)   )) +
-      geom_line( ) +
-      geom_vline(xintercept=1997, linetype="dashed", color = "black") +
+dd <- vaccine %>% 
+          # We specify treatment as a factor variable (i.e not numeric)
+          mutate( treatment = factor( treatment)) %>% 
+          # We group the data by treatment and control and time
+          group_by(treatment, time) %>% 
+          # We summarize  control and treatment in their total target and total vaccine uptakes 
+          summarize( total = sum(Total), MMR_n = sum(MMR_n)  ) %>% 
+         
+          mutate( 
+                  # We calculate the vaccine uptake of the control and treatment group
+                  uptake = MMR_n/total*100, 
+                  # We make a clean label for plotting
+                  group = case_when(
+                    treatment == 0 ~ "Control",
+                    treatment == 1 ~ "Treatment"
+                  ),
+                  # We make a variable for before an afetr treatment to calculate ATT
+                  before = factor(ifelse(time <= as.yearqtr("1997-02"), 1, 0)),
+                  after =   factor(ifelse(time > as.yearqtr("1997-02"), 1, 0))   ) 
+
+
+        # We plot 
+        ggplot( dd, aes( x = time, y = uptake, color = group   )) +
+        geom_line( ) +
+        geom_point() +
+      geom_vline(xintercept= as.numeric(as.yearqtr("1997-2")), linetype="dashed", color = "black") +
       labs(y = "Vaccine Uptake (%)", 
            x = "", 
-           title = "Trend of Vaccine Uptake between health trusts of Wales", 
+           title = "Figure 2: The Trust exposed to the misinformation campaign has the lowest uptake",
+           subtitle = "Trend of Vaccine Uptake between health Trusts of Wales", 
            colour = NULL, 
            caption = " Source: Public Health of England 2021") +
       theme_light() +
-      theme(plot.title = element_text(face = "bold", colour = "Black", ),
+      theme(plot.title = element_text(face = "bold", colour = "Black", size = 11.5),
             legend.title = NULL,
-            legend.background = element_rect(color = "#f0f2ee")) 
+            legend.background = element_rect(color = "#f0f2ee")) +
+       annotate(
+        geom = "curve", x = 1997.6, y = 77.5, xend = 1997.25, yend = 80, 
+        curvature = .3, arrow = arrow(length = unit(1, "mm"))
+        ) +
+      annotate(geom = "text", x = 1997.6, y = 77.5, label = "Media Campaign", hjust = "left")
 
 ```
 
-Our endeavor is to carry on Mason and Donnelly's work and further show a causal relation with a differences-in-differences model.
+Nevertheless, separating the health trusts in Wales by exposure to the local media campaign, we can observe that the Trust that had exposure to the misinformation campaign (treatment) has considerably less vaccine uptake than the others (control).  The uptake gap and the similar trend before the media campaign suggest that the misinformation campaign negatively affected vaccine uptake. Our endeavor is to carry on Mason and Donnelly's work and further show a causal relation with a differences-in-differences model.
 
-## 3. Classic Difference in Difference
+## 3. Difference in Difference
 
-Here we make the classic 2x2, I'm still not sure about the name of the sections. Review extra
+Let's motivate the possible causal relationship with a classic 2X2 model. We will use the same data from the COVER/Korner programme as in Mason & Donnelly ^[ [Mason, Brendan W, and Peter D Donnelly. "Impact of a Local Newspaper Campaign on the Uptake of the Measles Mumps and Rubella Vaccine." Journal of Epidemiology & Community Health, BMJ Publishing Group Ltd, 1 June 2000.]( https://jech.bmj.com/content/54/6/473)  ] for this first approach. The estimator equation is given by:
 
+$$
+ \widehat{\delta}^{2 \times 2}_T = \left(\bar{y}_{T}^{\operatorname{post}}-\bar{y}_{T}^{\operatorname{pre}}\right)-\left(\bar{y}_{U}^{\operatorname{post}}-\bar{y}_{U}^{\operatorname{pre}}\right)
+$$
+
+$\widehat{\delta}^{2 \times 2}_T$ is the estimated ATT for the group $T$, and $\bar{y}_T$ is the sample mean for that group in a particular period. The suffixes $T, U$ refer to the treatment and untreated groups.  
+
+```{r, echo = FALSE}
+
+# Post Treatment Treatment Group
+
+t_post <- filter( dd, after == 1, treatment ==1 )$uptake
+
+yt_post <- mean( filter( dd, after == 1, treatment ==1  )$uptake  )
+
+sdt_post <- sd( filter( dd, after == 1, treatment ==1  )$uptake)
+
+# Pre Treatment Treatment Group
+t_pre <- filter( dd, after == 0, treatment ==1 )$uptake
+
+yt_pre <- mean( filter( dd, after == 0, treatment ==1  )$uptake  )
+sdt_pre <- sd( filter( dd, after == 0, treatment ==1  )$uptake)
+
+# Post Treatment Control Group
+
+u_post <- filter( dd, after == 1, treatment ==0 )$uptake
+yu_post <- mean( filter( dd, after == 1, treatment ==0  )$uptake  )
+sdu_post <- sd( filter( dd, after == 1, treatment ==0  )$uptake)
+
+# Pre Treatment Control Group
+
+u_pre <- filter( dd, after == 0, treatment ==0 )$uptake
+yu_pre <- mean( filter( dd, after == 0, treatment ==0  )$uptake  )
+sdu_pre <- sd( filter( dd, after == 0, treatment ==0  )$uptake)
 
 ## Useful anotations {.tabset .tabset-pills}
 
@@ -240,3 +313,33 @@ Here we make the classic 2x2, I'm still not sure about the name of the sections.
 ### Tab 2 {-}
 
 ### {.unlisted .toc-ignore -}
+
+``` 
+
+|      Table 1: Vaccine Uptake Estimates       |
+|:--------------|:----------------------|:--------------------|----------------------------:|
+|                | **Treated**          | **Control**         |  **Treatment - Control**    |
+| After          |  `r yt_post `        |`r yu_post`          |  `r yt_post - yu_post`      |
+|                | (`r sdt_post `)      |(`r sdu_post `)      |   (`r sd(t_post - u_post) `)| 
+| Before         |  `r yt_pre `         | `r yu_pre `         |   `r yt_pre -  yu_pre `    |
+|                | (`r sdt_pre `)       |(`r sdu_pre `)       |   (`r sd(t_pre - u_pre) `)  |
+| Change in mean | **`r yt_post - yt_pre`** | **`r yu_post - yu_pre`** |    **`r yt_post - yt_pre - (yu_post - yu_pre)`** |
+|                |  (`r sd(t_post - t_pre) `)      | (`r sd(u_post - u_pre) `)       |   (`r sd(t_post - t_pre - (u_post - u_pre) ) `)  |
+
+
+Therefore, the first ATT establishes a reduction of `r round( ( yt_post - yt_pre - (yu_post - yu_pre))*100, digits = 2)`% in vaccine uptake if the health Trust was exposed to a misinformation campaign.
+
+
+## Bubliography
+
++ Garett , Renee, and Sean D Young. “Online Misinformation and Vaccine Hesitancy.” Translational Behavioral Medicine, U.S. National Library of Medicine, 14 Dec. 2021, https://pubmed.ncbi.nlm.nih.gov/34529080/. 
+
++ Loomba, Sahil, et al. “Measuring the Impact of COVID-19 Vaccine Misinformation on Vaccination Intent in the UK and USA.” Nature News, Nature Publishing Group, 5 Feb. 2021, https://www.nature.com/articles/s41562-021-01056-1. 
+ 
++ Mason, Brendan W, and Peter D Donnelly. “Impact of a Local Newspaper Campaign on the Uptake of the Measles Mumps and Rubella Vaccine.” Journal of Epidemiology &amp; Community Health, BMJ Publishing Group Ltd, 1 June 2000, https://jech.bmj.com/content/54/6/473. 
+
++ McCartney, Margaret. “MMR, Measles, and the South Wales Evening Post.” The BMJ, British Medical Journal Publishing Group, 22 Apr. 2013, https://www.bmj.com/content/346/bmj.f2598. 
+
++ Public Health Wales. “UK Loses WHO Measles Elimination Status, but Cases Remain Low in Wales.” Public Health Wales, https://phw.nhs.wales/news/uk-loses-who-measles-elimination-status-but-cases-remain-low-in-wales/. 
+
++ Singh, Karandeep, et al. “Misinformation, Believability, and Vaccine Acceptance over 40 Countries: Takeaways from the Initial Phase of the COVID-19 Infodemic.” PLOS ONE, Public Library of Science, 9 Feb. 2022, https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0263381. 
