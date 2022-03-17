@@ -249,9 +249,20 @@ insight
 The cost of treating the sick and controlling the outbreak exceeded £470,000 ($701,898)^[[BBC News «Swansea Measles Epidemic».](https://www.bbc.com/news/uk-wales-politics-23244628)]. In 2018  WHO Europe announced that the United Kingdom (UK) lost the measles elimination status^[ [Public Health Wales. "UK Loses WHO Measles Elimination Status, but Cases Remain Low in Wales." Public Health Wales.](https://phw.nhs.wales/news/uk-loses-who-measles-elimination-status-but-cases-remain-low-in-wales/)  ].
 
 
-### 2.2 The Impact on Vaccine Rate
 
-In response to the outbreak, Brendan Mason and Peter Donnelly investigated MMR uptake in parts of two health authority areas, Morgannwg and Dyfed Powys, where the South Wales Evening Post was sold. They found that uptake declined by 13.6%  in the distribution area of Swansea, Neath, Port Talbot, and Llanelli and by 2.4% in the rest of Wales. ^[ [Mason & Donnelly, «Impact of a local newspaper campaign on the uptake of the measles mumps and rubella vaccine». ]( https://jech.bmj.com/content/54/6/473)  ]. They concluded that the South Wales Evening Post campaign had a measurable and unhelpful impact over and above any adverse national publicity. However, it could not show a causal relation as an observational study. 
+## 3. Data and Motivating Evidence
+
+### 3.1 Data
+
+We will use the same data as Brendan Mason and Peter Donnelly on the measles mumps and rubella (MMR) vaccine uptake in the United Kingdom through the COVER/Korner programme, and Nomis' national census data of Wales to control for demographic characteristics. 
+
++ The COVER/Korner programme measures uptake of the MMR vaccine for children resident in a district on the evaluation date who reached their second birthday during the previous quarter^[ [Mason & Donnelly, «Impact of a local newspaper campaign on the uptake of the measles mumps and rubella vaccine». ]( https://jech.bmj.com/content/54/6/473)  ]; children are scheduled to receive the first MMR immunization at 12 months.
+
++ Nomis is a service provided by the Office for National Statistics that contains census data from 1961 to 2011 and other labor surveys^[[«Dataset Selection - Query - Nomis - Official Labour Market Statistics».](https://www.nomisweb.co.uk/query/select/getdatasetbytheme.asp?opt=3&theme=&subgrp=)].
+
+### 3.2 Motivating Evidence
+
+Mason & Donnelly investigated MMR uptake in parts of two health authority areas, Morgannwg and Dyfed Powys, where the South Wales Evening Post was sold. They found that uptake declined by 13.6%  in the distribution area of Swansea, Neath, Port Talbot, and Llanelli and by 2.4% in the rest of Wales^[ [Ibid.]( https://jech.bmj.com/content/54/6/473)  ]. They concluded that the South Wales Evening Post campaign had a measurable and unhelpful impact over and above any adverse national publicity. However, it could not show a causal relation as an observational study. 
 
 ```{r, echo = FALSE, out.width='75%'}
 
@@ -300,11 +311,7 @@ dd <- vaccine %>%
 
 ```
 
-Nevertheless, separating the health trusts in Wales by exposure to the local media campaign, we can observe that the Trust that had exposure to the misinformation campaign (treatment) has considerably less vaccine uptake than the others (control). The uptake gap and the similar trend before the media campaign suggest that the misinformation campaign negatively affected vaccine uptake. 
-
-## 3. Data and Motivating Evidence
-
-Let's motivate the possible causal relationship with a classic 2X2 model. We will use the same data from the COVER/Korner programme as in Mason & Donnelly ^[ [Mason, Brendan W, and Peter D Donnelly. "Impact of a Local Newspaper Campaign on the Uptake of the Measles Mumps and Rubella Vaccine." Journal of Epidemiology & Community Health, BMJ Publishing Group Ltd, 1 June 2000.]( https://jech.bmj.com/content/54/6/473)  ] for this first approach. The estimator equation is given by:
+Nevertheless, separating the health trusts in Wales by exposure to the local media campaign, we can observe that the Trust that had exposure to the misinformation campaign (treatment) has considerably less vaccine uptake than the others (control). The uptake gap and the similar trend before the media campaign suggest that the misinformation campaign negatively affected vaccine uptake. We design a classic 2X2 model for this first approach to motivate the possible causal relationship. The estimator equation is given by:
 
 $$
  \widehat{\delta}^{2 \times 2}_T = \left(\bar{y}_{T}^{\operatorname{post}}-\bar{y}_{T}^{\operatorname{pre}}\right)-\left(\bar{y}_{U}^{\operatorname{post}}-\bar{y}_{U}^{\operatorname{pre}}\right)
@@ -364,16 +371,30 @@ sdu_pre <- sd( filter( dd, after == 0, treatment ==0  )$uptake)
 Therefore, the first ATT establishes a reduction of `r round( ( yt_post - yt_pre - (yu_post - yu_pre)), digits = 2)`% in vaccine uptake if the health Trust was exposed to a misinformation campaign.
 
 
-## Bubliography
+## Bibliography
 
-+ Garett , Renee, and Sean D Young. “Online Misinformation and Vaccine Hesitancy.” Translational Behavioral Medicine, U.S. National Library of Medicine, 14 Dec. 2021, https://pubmed.ncbi.nlm.nih.gov/34529080/. 
++ BBC News. «Swansea Measles Epidemic: Worries over MMR Uptake after Outbreak», 10 de julio de 2013, sec. Wales politics. https://www.bbc.com/news/uk-wales-politics-23244628.
 
-+ Loomba, Sahil, et al. “Measuring the Impact of COVID-19 Vaccine Misinformation on Vaccination Intent in the UK and USA.” Nature News, Nature Publishing Group, 5 Feb. 2021, https://www.nature.com/articles/s41562-021-01056-1. 
- 
-+ Mason, Brendan W, and Peter D Donnelly. “Impact of a Local Newspaper Campaign on the Uptake of the Measles Mumps and Rubella Vaccine.” Journal of Epidemiology &amp; Community Health, BMJ Publishing Group Ltd, 1 June 2000, https://jech.bmj.com/content/54/6/473. 
++ «Dataset Selection - Query - Nomis - Official Labour Market Statistics». Accedido 17 de marzo de 2022. https://www.nomisweb.co.uk/query/select/getdatasetbytheme.asp?opt=3&theme=&subgrp=.
 
-+ McCartney, Margaret. “MMR, Measles, and the South Wales Evening Post.” The BMJ, British Medical Journal Publishing Group, 22 Apr. 2013, https://www.bmj.com/content/346/bmj.f2598. 
++ European Observatory on Health Systems and Policies, Martin McKee, Walter Ricciardi, Luigi Siciliani, Bernd Rechel, Veronica Toffolutti, David Stuckler, Alessia Melegaro, y Jan C. Semenza. «Increasing Vaccine Uptake: Confronting Misinformation and Disinformation». Eurohealth 24, n.º 3 (2018): 35-38. https://apps.who.int/iris/handle/10665/332602.
 
-+ Public Health Wales. “UK Loses WHO Measles Elimination Status, but Cases Remain Low in Wales.” Public Health Wales, https://phw.nhs.wales/news/uk-loses-who-measles-elimination-status-but-cases-remain-low-in-wales/. 
++ Garett, Renee, y Sean D. Young. «Online Misinformation and Vaccine Hesitancy». Translational Behavioral Medicine 11, n.º 12 (14 de diciembre de 2021): 2194-99. https://doi.org/10.1093/tbm/ibab128.
 
-+ Singh, Karandeep, et al. “Misinformation, Believability, and Vaccine Acceptance over 40 Countries: Takeaways from the Initial Phase of the COVID-19 Infodemic.” PLOS ONE, Public Library of Science, 9 Feb. 2022, https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0263381. 
++ Loomba, Sahil, Alexandre de Figueiredo, Simon J. Piatek, Kristen de Graaf, y Heidi J. Larson. «Measuring the Impact of COVID-19 Vaccine Misinformation on Vaccination Intent in the UK and USA». Nature Human Behaviour 5, n.º 3 (marzo de 2021): 337-48. https://doi.org/10.1038/s41562-021-01056-1.
+
++ Lyu, Hanjia, Zihe Zheng, y Jiebo Luo. «Misinformation versus Facts: Understanding the Influence of News Regarding COVID-19 Vaccines on Vaccine Uptake». Health Data Science 2022 (12 de marzo de 2022). https://doi.org/10.34133/2022/9858292.
+
++ Mason, B., y P. Donnelly. «Impact of a local newspaper campaign on the uptake of the measles mumps and rubella vaccine». Journal of Epidemiology and Community Health 54, n.º 6 (junio de 2000): 473-74. https://doi.org/10.1136/jech.54.6.473.
+
++ McCartney, Margaret. «MMR, Measles, and the South Wales Evening Post». BMJ 346 (22 de abril de 2013): f2598. https://doi.org/10.1136/bmj.f2598.
+
++ Meikle, James. «Measles Outbreak Sees “missing Generation” Queuing for MMR Jab». The Guardian, 17 de abril de 2013, sec. Society. https://www.theguardian.com/society/2013/apr/17/measles-outbreak-mmr-jab.
+
++ Pierri, Francesco, Brea Perry, Matthew R. DeVerna, Kai-Cheng Yang, Alessandro Flammini, Filippo Menczer, y John Bryden. «The impact of online misinformation on U.S. COVID-19 vaccinations». arXiv:2104.10635 [physics], 1 de mayo de 2021. http://arxiv.org/abs/2104.10635.
+
++ Singh, Karandeep, Gabriel Lima, Meeyoung Cha, Chiyoung Cha, Juhi Kulshrestha, Yong-Yeol Ahn, y Onur Varol. «Misinformation, Believability, and Vaccine Acceptance over 40 Countries: Takeaways from the Initial Phase of the COVID-19 Infodemic». PLOS ONE 17, n.º 2 (9 de febrero de 2022): e0263381. https://doi.org/10.1371/journal.pone.0263381.
+
++ «UK loses WHO measles elimination status, but cases remain low in Wales - Public Health Wales». Accedido 17 de marzo de 2022. https://phw.nhs.wales/news/uk-loses-who-measles-elimination-status-but-cases-remain-low-in-wales/.
+
++ Wilson, Steven Lloyd, y Charles Wiysonge. «Social Media and Vaccine Hesitancy». BMJ Global Health 5, n.º 10 (1 de octubre de 2020): e004206. https://doi.org/10.1136/bmjgh-2020-004206.
