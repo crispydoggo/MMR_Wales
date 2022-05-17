@@ -1,0 +1,1040 @@
+---
+title: "The effect of misinformation on vaccine uptake: the case of South Wales"
+author: "Lothar Mateo Rojas Sosa"
+classoption:
+  - x11names
+  - twocolumn
+
+output:
+  pdf_document:
+    toc: false
+    toc_depth: 4
+    number_sections: FALSE
+    
+header-includes:
+    - \input{structure.tex}
+    - \usepackage{setspace}\onehalfspacing
+    - \usepackage{tikz, tabularx, colortbl} 
+    - \definecolor{blue(pigment)}{rgb}{0.05, 0.2, 0.25}
+    - \usepackage{dsfont}
+    - \def\checkmark{\tikz\fill[scale=0.4](0,.35) -- (.25,0) -- (1,.7) -- (.25,.15) -- cycle;} 
+    - \renewcommand{\contentsname}{}
+    - \usepackage{ragged2e}
+    - \usepackage{booktabs}
+    - \usepackage{multicol}
+date: "`r format(Sys.time(), '%d %B %Y')`"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.align = 'center', echo = TRUE)
+knitr::opts_chunk$set(fig.align = 'center', echo = TRUE, out.width = '102%')
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+
+rm(list = ls())
+
+# ========================
+# Libraries
+# ========================
+
+library(tidyverse)
+library(haven)
+library(readxl)
+library(XLConnect)
+library(zoo)
+library(xts)
+library(fixest)
+library(data.table)
+library(estimatr)
+library(fwildclusterboot)
+library(modelsummary)
+library(lmtest)
+library(sandwich)
+library(stargazer)
+library(scales)
+library(kableExtra)
+
+# ========================
+# Data import
+# ========================
+
+vaccine <- read_dta("./Data/data_final.dta")
+pop <- read_xlsx("./Data/uk_population.xlsx")
+cases <- read_xlsx("./Data/uk_measles_cases.xlsx")
+nomis_ethnic <- read_xlsx("./Data/nomis_ethnic.xlsx")
+nomis_student <- read_xlsx("./Data/nomis_students.xlsx")
+trusts_id <- read_xlsx("./Data/trust_district.xlsx")
+
+vaccine <- vaccine %>% 
+  mutate( time = as.yearqtr( paste0(year, "-0", quarter )   )  )
+
+
+# ===============
+# Functions
+# ===============
+
+disperse <- function( population){
+  
+  # The function calculates the missing yearly population data of Wales by assuming a constant change of population         between census
+  # ________________________________________________________________________________________________________________
+  
+  # 1) Initialize the output
+  
+  output <- data.frame()
+  
+  
+  # 2) We set the data set for the difference of years between census 
+  
+  aux <- pop %>%  
+    mutate( diff_year = lead(year) - year ) 
+  
+
+  # 3) calculates the annual change of population of different regions
+  
+  for( i in 1:(ncol(aux) - 2)){
+    
+    varname <- paste0( "diff_", names(aux[,1+i]) )
+    
+    aux[[varname]] <- unlist( (lead(aux[,1+i]) - aux[,1+i])/aux[,12]   ) 
+      
+  }
+  
+  # 4) We filter for the census that had more than a year apart
+    
+  aux <- aux %>%  
+    filter( diff_year > 1  )
+  
+  # 5)  We add the missing annual population
+  
+  # For each census 
+  
+  
+  for( m in 1:nrow(aux)){
+    
+    aux_1 = aux[m,]
+    
+    year_d <- aux_1$year:(aux_1$year + aux_1$diff_year - 1)
+    
+    aux_2 <- data.frame(nk = numeric(aux_1$diff_year))
+      
+    aux_2 <- mutate(aux_2, year = year_d )
+    
+    # For each zone 
+    
+    for( j in 1:10){
+      
+      population <- c(as.numeric(unlist(aux_1[, 1 + j ])), numeric(aux_1$diff_year - 1))
+      
+      # Fill annual population 
+      
+      for( k in 2:(aux_1$diff_year)  ){
+        
+        population[k] <- population[k-1] + as.numeric(unlist(aux_1[, 12 + j ]))
+        
+      }
+      
+      
+      # Add the variables
+      
+      varname <- names(aux_1[,1+j])
+      
+      aux_2[[varname]] <- population
+      
+      
+    }
+    
+    
+    # Set data ready for import
+    if( m > 1){
+      
+      output <- rbind(output, aux_2)
+      
+    } else {
+      
+      output <- aux_2
+    }
+
+    
+  }
+  
+  return(output)
+}
+
+
+```
+
+
+```{r data, include=FALSE}
+
+# ============================
+# Data Correction
+# ============================
+
+nomis_student <- nomis_student %>% 
+                 mutate( area = str_replace(area, "ualad09:", ""))
+
+nomis <- inner_join(nomis_ethnic, nomis_student, suffix = c("_ethnic", "_student"),by = "area")
+  
+rm(nomis_ethnic, nomis_student)
+
+vaccine <- vaccine %>% 
+          rename( trust = Trust)
+
+
+# ============================
+# Covariates formation
+# ============================
+
+
+trusts_cov <- trusts_id %>% 
+              # Match the data bases wih the trusts' district
+              left_join(nomis, by = "area") %>% 
+              group_by(trust) %>% 
+              # Group by health trust and calculate the population that potentially attended the trust
+              summarize( female_students = sum(female_students ),
+                         total_group_student = sum(total_group_student)) %>% 
+              mutate(  female_students = female_students*100/total_group_student)
+
+rm(trusts_id)
+
+
+# ==============================
+# Fixed Effects Data preparation
+# ==============================
+
+
+# I) Arrange vaccine data set
+
+
+  dd_uptake <- vaccine %>% 
+    # We select the variables of interest
+    select(  time, trust, before, after, treatment, uptake = MMR_percentage ) %>% 
+    # Trust as factor and develop the interaction variable time_to_treatment
+    mutate( trust = factor(trust), time_to_treat =  ifelse(  treatment == 1,  ( time -  as.yearqtr("1997-02") )/0.25, 0  )     ) %>% 
+    # Arrange descendent order
+    arrange(trust) 
+
+# II) Create the interaction variables
+
+  # Set first variable
+  time_to_treat <- dd_uptake$time_to_treat
+  
+  # Set second variable
+  treatment <- dd_uptake$treatment
+  
+  # Create interaction with fixest
+  treat_interaction <- i(time_to_treat, treatment,  ref = 0)
+  
+  #Create the time effects dummy
+  
+  i_matrix <- diag(13)
+  
+  # Create the data set that contains the dummy variables
+  
+  interact <-  data.frame( treat_1 =  treat_interaction[,1], treat_2 =  treat_interaction[,2], treat_3 =  treat_interaction[,3],
+           treat_4 =  treat_interaction[,4], treat_5 =  treat_interaction[,5], treat_6 =  treat_interaction[,6],
+           treat_7 =  treat_interaction[,7], treat_8 =  treat_interaction[,8], treat_9 =  treat_interaction[,9],
+           treat_10 =  treat_interaction[,10], treat_11 =  treat_interaction[,11], treat_12 =  treat_interaction[,12],
+           d_1 = i_matrix[,1], d_2 = i_matrix[,2], d_3 = i_matrix[,3], d_4 = i_matrix[,4], d_5 = i_matrix[,5],
+           d_6 = i_matrix[,6], d_7 = i_matrix[,7], d_8 = i_matrix[,8], d_9 = i_matrix[,9], d_10 = i_matrix[,10],
+           d_11 = i_matrix[,11], d_12 = i_matrix[,12], d_13 = i_matrix[,13])
+
+# III) Add dummies to the data set and sum time fixed effects
+  
+  dd_uptake <- dd_uptake %>%
+               cbind(interact)  
+  
+
+# IV) Dunno why trusts are not interpreted correctly so...
+  
+  
+  # We get the original trust names
+  
+    compare_1 <- dd_uptake %>% 
+                 group_by(trust) %>% 
+                 summarize( aux = sum(before)) %>% 
+                 select(-aux) 
+    
+    # We replace the corrupted trust names with the originals
+    
+    trusts_cov <- mutate( trusts_cov, trust = compare_1$trust)
+
+
+# IV) Finally join the damn data
+
+dd_uptake <- left_join(dd_uptake, trusts_cov, by = "trust")
+
+# V) Make municipality fixed effects
+
+trust_id <- unique( dd_uptake$trust )
+
+dd_uptake <- dd_uptake %>%  
+       mutate( m_1 = ifelse( trust == trust_id[1], 1, 0 ),  
+               m_2 = ifelse( trust == trust_id[2], 1, 0 ),
+               m_3 = ifelse( trust == trust_id[3], 1, 0 ),
+               m_4 = ifelse( trust == trust_id[4], 1, 0 ),
+               m_5 = ifelse( trust == trust_id[5], 1, 0 ),
+               m_6 = ifelse( trust == trust_id[6], 1, 0 ),
+               m_7 = ifelse( trust == trust_id[7], 1, 0 ),
+               m_8 = ifelse( trust == trust_id[8], 1, 0 ),
+               m_9 = ifelse( trust == trust_id[9], 1, 0 ),
+               m_10 = ifelse( trust == trust_id[10], 1, 0 ),
+               m_11 = ifelse( trust == trust_id[11], 1, 0 ),
+               m_12 = ifelse( trust == trust_id[12], 1, 0 ),
+               m_13 = ifelse( trust == trust_id[13], 1, 0 ),
+               m_14 = ifelse( trust == trust_id[14], 1, 0 ),)
+
+
+m_cov <- paste( "m_", 1:14, sep = "")
+m_cov <- m_cov[-6]
+m_cov = paste(m_cov, collapse = " + ")
+
+# I) Prepare the vector of interactions for the formula
+
+  d_fixed <- names( interact[, 13:24])
+  d_cov <- NULL
+
+  d_cov <- paste( d_fixed, ":female_students", sep = "")
+  d_cov = paste(d_cov, collapse = " + ")
+
+  
+  
+  rm( d_fixed, time_to_treat, treatment, treat_interaction, i_matrix, trust_id, compare_1)
+
+
+
+```
+\small
+
+
+## 1. Introduction
+
+\begin{centering}
+
+\emph{Information that hurts}
+
+\end{centering}
+
+"The spread of SARS-CoV-2, the causative agent of COVID-19, has resulted in an unprecedented global public health and economic crisis" ^[  [ \tiny Loomba et al., «Measuring the Impact of COVID-19 Vaccine Misinformation on Vaccination Intent in the UK and USA».](https://www.nature.com/articles/s41562-021-01056-1)]. As a result, the World Health Organization (WHO) declared a pandemic on 11 March 2020. The development of COVID-19 vaccines has been a significant undertaking in fighting the disease; nevertheless, as countries developed vaccines, misinformation spread rapidly through online channels such as news outlets, websites, and social media^[ [ \tiny Garett y Young, «Online Misinformation and Vaccine Hesitancy».](https://pubmed.ncbi.nlm.nih.gov/34529080/)].
+
+Covid-19 is not the only disease where misinformation has spread, "despite the availability of safe and effective vaccines; several European countries are experiencing outbreaks of vaccine-preventable diseases.^[ [ \tiny European Observatory on Health Systems and Policies et al., «Increasing Vaccine Uptake».](https://apps.who.int/iris/handle/10665/332602)]" The European Observatory on Health Systems and Policies conjectures that one reason for the outbreaks is extensive misinformation about vaccines. 
+
+The seriousness of misinformation relies on the public's vaccine hesitancy; misinformation motivates skepticism towards vaccines and ultimately hesitation on vaccine uptake ^[[Singh et al., «Misinformation, Believability, and Vaccine Acceptance over 40 Countries».]( https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0263381)] causing the further spread of the disease and increasing public costs. Therefore, vaccine hesitancy plays an essential role in decreasing vaccination rates.
+
+Due to the danger of vaccine hesitancy,  WHO considered it a top ten global threat to public health^[ [Garett y Young, «Online Misinformation and Vaccine Hesitancy».](https://pubmed.ncbi.nlm.nih.gov/34529080/)]. That's why misinformation should be treated as a significant concern in public policy, some countries are currently addressing the misinformation issue, but the effort might not be sufficient.
+
+\begin{centering}
+\vspace{1cm}
+\emph{Literature}
+
+\end{centering}
+The negative (positive) relationship between misinformation and vaccine rate (vaccine hesitancy) is well studied. For example, Lyu, Seng, and Luo (2022)^[  [\tiny Lyu, Zheng, y Luo, «Misinformation versus Facts».](https://spj.sciencemag.org/journals/hds/2022/9858292/) ] and Pierri, Francesco, Brea Perry, et al. (2021)^[ [ \tiny Pierri et al., «The impact of online misinformation on US COVID-19 vaccinations».](https://arxiv.org/abs/2104.10635) ] analyze misinformation in the online discourses and discussions about the COVID-19 vaccines with Twitter. In addition, Wilson, Steven Lloyd, y Charles Wiysonge (2020) globally evaluated the effect of social media and online foreign disinformation campaigns on vaccination rates and attitudes towards vaccine safety^[[ \tiny Wilson y Wiysonge, «Social Media and Vaccine Hesitancy».](https://doi.org/10.1136/bmjgh-2020-004206)]. On the other hand, Mason & Donnelly (2000)^[ [\tiny Mason y Donnelly, «Impact of a local newspaper campaign on the uptake of the measles mumps and rubella vaccine».](https://doi.org/10.1136/jech.54.6.473) ] study the effect of a newspaper media campaign on vaccine uptake in South Wales. 
+
+However, we have little evidence of causal relationship between misinformation and vaccine hesitancy (or vaccine rate); the only study that we are aware of that quantifies the effect is the work of Loomba, Sahil, Alexandre de Figueiredo, et al. (2021). They conducted a randomized controlled trial in the UK and the USA to measure how exposure to online misinformation around COVID-19 vaccines affects intent to vaccinate to protect oneself or others^[ [\tiny Loomba et al., «Measuring the Impact of COVID-19 Vaccine Misinformation on Vaccination Intent in the UK and USA».](https://doi.org/10.1038/s41562-021-01056-1) ]. 
+
+To understand the severity of misinformation, we will contribute to the causal relationship literature by studying the case of Wales, where a local newspaper set a local media campaign against measles, mumps, and rubella (MMR) vaccine in 1997. We endeavor to carry on Mason and Donnelly's work and further show a causal relation with a differences-in-differences model.
+
+\clearpage
+
+## 2. The case of Wales 
+
+Since July 1997,  the South Wales Evening Post ran a proacted campaign against the MMR vaccine. The evening newspaper has three daily editions: Swansea, Neath and Port Talbot and Carmarthenshire; specifically, it was sold in parts of two Health Authority areas: Morgannwg and Dyfed Powys ^[  [ \tiny  Mason y Donnelly, «Impact of a local newspaper campaign on the uptake of the measles mumps and rubella vaccine».]( https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1731691/ )  ]. The newspaper used a fraudulent research paper published in the medical journal _The Lancet_  that claimed a link between the __MMR vaccine and autism__^[ [ \tiny Meikle, «Measles Outbreak Sees "missing Generation" Queuing for MMR Jab».](https://www.theguardian.com/society/2013/apr/17/measles-outbreak-mmr-jab.) ]. Over three months, the paper published various resources that questioned the MMR vaccine safety, specifically: 5 front-page headlines, 3 opinion articles, and 18 other articles ^[  [ \tiny McCartney, «MMR, Measles, and the South Wales Evening Post».](https://www.bmj.com/content/346/bmj.f2598 )   ]
+
+Years later, in 2013, there was a severe measles outbreak in Wales with 1,219 measles notifications in Swansea, Neath Port Talbot, Bridgend, Carmarthenshire, Ceredigion, Pembrokeshire, and Powys. In summary, there were 1,455 measles notifications for the whole of Wales, __664 of which were in Swansea alone__, one of the publication hubs of the South Wales Evening Post.
+
+```{r figure_1, echo = FALSE}
+
+# ====================
+# Displays Figure 1
+# ====================
+
+# 1) Fills the missing annual data between census
+
+tot_pop <- disperse(pop)
+
+# 2) Adds missing years when the census was performed annualy
+
+tot_pop <- tot_pop %>% 
+          # Removes an auxlary variable
+          select( -nk) %>% 
+          # Paste de missing population data
+          rbind(filter(pop, year > 2014)) %>% 
+          # Filters for years that we have records on measles cases
+          filter( year > 1995 )
+
+# 3) Prepare for data join of measles cases
+
+rate <- cases %>% 
+        # Select the total number of measles cases prior 2021
+        filter(age_group == "total" , year < 2021) %>% 
+        # Removes non-relevant variables
+        select( -age_group, -total) 
+
+
+# 4) Calculate the rate of measles cases per 100,000 population
+
+for( i in 2:ncol(rate)){
+  
+  rate[, i] <- 100000 * rate[,i] / tot_pop[,i] 
+}
+
+
+# 5) Prepares data for plotting
+
+graph <- rate %>% 
+        # Join all zones in one big column so we can graph with labels
+        gather( key = zone, value = rate_mmr, east_midlands:wales) %>% 
+        # We rename the variable names so they are readable
+        mutate( zone = case_when(
+          zone == "east_midlands" ~  "East Midlands",
+          zone == "east_of_england" ~ "East of England",
+          zone == "london" ~  "London",
+          zone == "south_east" ~ "South East",
+          zone == "south_west" ~ "South West",
+          zone == "wales" ~ "Wales",
+          zone == "west_midlands" ~ "West Midlands"
+        ))
+
+# 6) Plot 
+
+ggplot( graph, aes( x = year, y = rate_mmr , color = zone   )) + 
+      # Line layer
+      geom_line() +
+      # Point layer
+      geom_point() +
+      # Set different labels
+      labs(y = "Rate of measles cases per 100,000 population", 
+           x = "", 
+           title = "Figure 1: Wales had the highest rate of measles cases in the nearby districts", 
+           subtitle = "Rate of Measles cases in England and Wales",
+           colour = NULL, 
+           caption = " Source: Public Health of England 2021") +
+      # Set a base theme
+      theme_light() +
+      # Arrange some personalized aspects of the graph
+      theme(plot.title = element_text(face = "bold", colour = "Black", size = 12),
+            legend.title = NULL,
+            legend.background = element_rect(color = "#f0f2ee"),
+            legend.key.size = unit(1.1, 'cm')) 
+
+rm(tot_pop, rate, graph,disperse)
+```
+
+The rate of measles cases in Wales was abnormally high in the 2013 outbreak; the rate was higher than all of London's and South East's records, both of the higher density population zones. In addition, some sources linked the measles outbreak with The Lancet's article and the campaign in the _South Wales Evening Post_ against the MMR vaccine^[ [ \tiny McCartney, «MMR, Measles, and the South Wales Evening Post».](https://doi.org/10.1136/bmj.f2598) ], as most of those infected were not immunized as infants during the MMR scare.
+
+```{r figure_2, echo = FALSE}
+
+# ====================
+# Displays Figure 2
+# ====================
+
+
+# 1) Re arrange cases data
+
+insight <- cases %>% 
+          # We filter for the year of the outbreak
+          filter(year == 2013) %>% 
+          # We remove unwanted date
+          filter( !(age_group == "nk" | age_group == "total") ) %>%
+          # Set as factor the age group variable
+          mutate( age_group = factor(age_group) ) %>%
+          # We reorder the labels for easy interpretation
+          mutate( age_group = fct_relevel(age_group, 
+                                          "0-1y","1-4y","5-9y",
+                                          "10-14y", "15-19y", "20-24y",
+                                          "25-29y", "30-34y", "35+y") ) %>% 
+          # 2) plot
+          ggplot(aes(x = age_group, y = wales, fill = age_group, alpha = 0.5)) + geom_col() +
+          # Vertical bar chart for easy interpreation
+          coord_flip() +
+          # Main Labels
+          labs(y = "Number of Measles Cases", 
+               x = "", 
+               title = "Figure 2: The most affected age group was supposed to be vaccinated \n in 1997-1999.", 
+               subtitle = "Number of Measles Cases by Age Group in Wales in 2013",
+               colour = NULL, 
+               caption = " Source: Public Health of England 2021") +
+          # Set base theme for plot
+          theme_light() +
+          # Set theme personalizaed elements
+          theme(plot.title = element_text(face = "bold", colour = "Black", size = 12),
+                legend.title = NULL,
+                legend.position="none") 
+
+insight
+
+rm(insight,i)
+        
+
+```
+
+The cost of treating the sick and controlling the outbreak exceeded £470,000 ($701,898)^[[ \tiny BBC News «Swansea Measles Epidemic».](https://www.bbc.com/news/uk-wales-politics-23244628)]. In 2018  WHO Europe announced that the United Kingdom (UK) lost the measles elimination status^[ [\tiny Public Health Wales. "UK Loses WHO Measles Elimination Status, but Cases Remain Low in Wales." Public Health Wales.](https://phw.nhs.wales/news/uk-loses-who-measles-elimination-status-but-cases-remain-low-in-wales/)  ].
+
+\clearpage
+
+## 3. Data and Motivating Evidence
+
+\begin{centering}
+
+\emph{Data}
+
+\end{centering}
+
+We will use the same data as Brendan Mason and Peter Donnelly on the measles mumps and rubella (MMR) vaccine uptake in the United Kingdom through the COVER/Korner programme, and Nomis' national census data of Wales to control for demographic characteristics. 
+
++ The COVER/Korner programme measures uptake of the MMR vaccine for children resident in a district on the evaluation date who reached their second birthday during the previous quarter^[ [ \tiny Mason & Donnelly, «Impact of a local newspaper campaign on the uptake of the measles mumps and rubella vaccine». ]( https://jech.bmj.com/content/54/6/473)  ]; children are scheduled to receive the first MMR immunization at 12 months. \bigskip
+
++ Nomis is a service provided by the Office for National Statistics that contains census data from 1961 to 2011 and other labor surveys^[[ \tiny «Dataset Selection - Query - Nomis - Official Labour Market Statistics».](https://www.nomisweb.co.uk/query/select/getdatasetbytheme.asp?opt=3&theme=&subgrp=)].
+
+Specifically, the COVER/Korner data specifies quarterly data from 1996 to 1999 on vaccine uptake of various vaccines (from Pollio to MMR). The information was gathered at different health trusts in Wales; the health trusts are spread across diverse regions of Wales. Thus, district-level analysis is available; to assemble the district-level data, we use the 1991 census query of Nomis that contains the district demographics of Wales separated by age group.
+
+
+\begin{centering}
+
+\emph{Motivating Evidence}
+
+\end{centering}
+
+Mason & Donnelly investigated MMR uptake in parts of two health authority areas, Morgannwg and Dyfed Powys, where the South Wales Evening Post was sold. They found that uptake declined by 13.6%  in the distribution area of Swansea, Neath, Port Talbot, and Llanelli and by 2.4% in the rest of Wales^[ [\tiny Mason & Donnelly, «Impact of a local newspaper campaign on the uptake of the measles mumps and rubella vaccine». ]( https://jech.bmj.com/content/54/6/473)  ]. They concluded that the South Wales Evening Post campaign had a measurable and unhelpful impact over and above any adverse national publicity. However, it could not show a causal relation as an observational study. 
+
+```{r figure_3, echo = FALSE}
+
+# ================================
+# Displays Figure 3: Vaccine Uptake
+# ================================
+
+
+# 1) Prepare data for graph
+
+dd <- vaccine %>% 
+          # We specify treatment as a factor variable (i.e not numeric)
+          mutate( treatment = factor( treatment)) %>% 
+          # We group the data by treatment and control and time
+          group_by(treatment, time) %>% 
+          # We summarize  control and treatment in their total target and total vaccine uptakes 
+          summarize( total = sum(Total), MMR_n = sum(MMR_n)  ) %>% 
+         
+          mutate( 
+                  # We calculate the vaccine uptake of the control and treatment group
+                  uptake = MMR_n/total*100, 
+                  # We make a clean label for plotting
+                  group = case_when(
+                    treatment == 0 ~ "Control",
+                    treatment == 1 ~ "Treatment"
+                  ),
+                  # We make a variable for before an afetr treatment to calculate ATT
+                  before = factor(ifelse(time <= as.yearqtr("1997-02"), 1, 0)),
+                  after =   factor(ifelse(time > as.yearqtr("1997-02"), 1, 0))   ) 
+
+# 2) Plot
+
+        ggplot( dd, aes( x = time, y = uptake, color = group   )) +
+        geom_line( ) +
+        geom_point() +
+        # Vertical line to set a benchmark of treatment
+        geom_vline(xintercept= as.numeric(as.yearqtr("1997-2")), linetype="dashed", color = "black") +
+        # Labels of treatment
+        labs(y = "Vaccine Uptake (%)", 
+             x = "", 
+             title = "Figure 3: The Trusts exposed to the misinformation campaign had the lowest uptake",
+             subtitle = "Trend of Vaccine Uptake between health Trusts of Wales", 
+             colour = NULL, 
+             caption = " Source: Public Health of England 2021") +
+        # Base theme
+        theme_light() +
+        # Theme personalization
+        theme(plot.title = element_text(face = "bold", colour = "Black", size = 11.5),
+              legend.title = NULL,
+              legend.background = element_rect(color = "#f0f2ee")) +
+        # Arrow that point the vertical line
+         annotate(
+          geom = "curve", x = 1997.6, y = 77.5, xend = 1997.25, yend = 80, 
+          curvature = .3, arrow = arrow(length = unit(1, "mm"))
+          ) +
+        # Label of arrow
+        annotate(geom = "text", x = 1997.6, y = 77.5, label = "Media Campaign", hjust = "left") 
+
+```
+
+Nevertheless, separating the health trusts in Wales by exposure to the local media campaign, we can observe that the Trust that had exposure to the misinformation campaign (treatment) has considerably less vaccine uptake than the others (control). The uptake gap and the similar trend before the media campaign suggest that the misinformation campaign negatively affected vaccine uptake. 
+
+We design a classic 2X2 model for this first approach to motivate the possible causal relationship. The estimator equation is given by:
+
+$$
+ \widehat{\delta}^{2 \times 2}_T = \left(\bar{y}_{T}^{\operatorname{post}}-\bar{y}_{T}^{\operatorname{pre}}\right)-\left(\bar{y}_{U}^{\operatorname{post}}-\bar{y}_{U}^{\operatorname{pre}}\right)
+$$
+
+$\widehat{\delta}^{2 \times 2}_T$ is the estimated _average treatment effect on the treated (ATT)_ for the group $T$, and $\bar{y}_T$ is the sample mean for that group in a particular period. The suffixes $T, U$ refer to the treatment and untreated groups.  
+
+```{r dd_classic, echo = FALSE}
+
+# ======================
+# Calculates classic DD
+# ======================
+
+dd <- dd %>% 
+      mutate( before = factor(before), treatment = factor(treatment))
+
+dd_classic_1 <- lm( uptake ~ before + treatment + before*treatment + 1, dd)
+dd_classic_2 <- lm( uptake ~ after + treatment + after*treatment + 1, dd)
+
+coeff_before <- summary(dd_classic_1)$coefficients
+
+coeff_after <- summary(dd_classic_2)$coefficients
+
+# Post Treatment Treatment Group
+
+yt_post <- mean( filter( dd, after == 1, treatment ==1  )$uptake  )
+
+sdt_post <- sd(filter( dd, after == 1, treatment ==1  )$uptake) / sqrt(10)
+
+# Pre Treatment Treatment Group
+
+yt_pre <- mean( filter( dd, after == 0, treatment ==1  )$uptake  )
+sdt_pre <- sd(filter( dd, after == 0, treatment ==1  )$uptake) / sqrt(3)
+
+
+
+``` 
+
+\begin{table}[h]
+  \centering
+  \caption{Vaccine Uptake Estimates}
+  \small
+  \begin{tabular}{@{}cccc@{}}
+    \toprule
+      & Treated    & Control  & Treatment - Control  \\
+    \midrule
+    After & `r round(yt_post, digits = 2) ` & `r round(coeff_before[1,1 ], digits =2) ` &  `r round( coeff_before[3,1 ], digits = 2) ` \\
+          & \scriptsize{(`r round(sdt_post, digits = 2) `)} & \scriptsize{(`r round(coeff_before[1,2 ], digits = 2) `)} & \scriptsize{(`r round(coeff_before[3,2 ], digits = 2) `)} \\
+    Before & `r round(yt_pre, digits = 2) ` &  `r round(coeff_after[1,1 ], digits =2) ` &  `r round(coeff_after[3,1 ], digits = 2) ` \\
+              & \scriptsize{(`r round(sdt_pre, digits = 2) `)} & \scriptsize{(`r round(coeff_after[1,2 ], digits = 2) `)} & \scriptsize{(`r round(coeff_after[3,2 ], digits = 2) `)} \\
+    \midrule
+    Change in mean & \textbf{`r round( yt_post - yt_pre, digits = 2) `} &  \textbf{`r round(coeff_after[2,1 ], digits =2) `} &  \textbf{`r round(coeff_after[4,1 ], digits = 2) `} \\
+     &  & \scriptsize{(`r round(coeff_after[2,2 ], digits = 2) `)} & \scriptsize{(`r round(coeff_after[4,2 ], digits = 2) `)} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+The first naive estimate showed a reduction of `r round(coeff_after[4,1 ], digits = 2) `% in vaccine uptake if the Trust had exposure to a misinformation campaign. However, even though it's an excellent first lead, none of the estimates were significant. Also, as Mason & Donelly state, an alternative explanation for the association between the adverse local publicity and the fall in uptake is possible; therefore, we need a more robust design to prove the causal effect.
+
+\clearpage
+
+# 4. Estimation Strategy
+
+\begin{centering}
+
+\emph{What affects vaccine uptake?}
+
+\end{centering}
+
+
+Ideal covariates are correlated with both Treatment and outcome; furthermore, data before the Treatment is needed in difference-in-difference. The Nomis data provides us with data from 1991, before the misinformation campaign in 1997. On the other hand, the health literature has explored vaccine uptake factors. Therefore, based on the health literature, we propose one main covariate:
+
++ **Literacy (education) of women:** individuals' literacy is what mainly suggests their resilience to misinformation and disposal to vaccinate^[ [ \tiny Khairat, Zou, y Adler-Milstein, «Factors and Reasons Associated with Low COVID-19 Vaccine Uptake among Highly Hesitant Communities in the US».](https://doi.org/10.1016/j.ajic.2021.12.013) ]. Further, the literacy of the mother heavily influences vaccine uptake in children^[ [ \tiny Forshaw et al., «The global effect of maternal education on complete childhood vaccination».](https://doi.org/10.1186/s12879-017-2890-y)  ]. 
+
+The 1991 census provides district-level data to construct such variables. Also, considering the average age of a mother at childbirth in the UK was 27.7 years in 1991^[ [\tiny Statista. "UK Average Age of Mothers 2020".](https://www.statista.com/statistics/294590/average-age-of-mothers-uk/)] we select the following variables:
+
++ **Table L08 Economic position: Residents aged 16 and over.** Specifically, female students 20-30 years old share in the district for literacy covariate. 
+
+
+\begin{centering}
+
+\emph{Model Set-Up}
+
+\end{centering}
+
+We propose the difference-in-differences regression of interest based on the **Library of Statistical Techniques  [LOST](https://lost-stats.github.io/):**
+$$
+Y_{i t}=\alpha+\sum_{t=T_{0}}^{T_1} \beta_{t} \cdot T_{i t}+\eta_{i}+ \sum_{t = T_0}^{T_1}\gamma_{t} \delta_t \cdot x_i +\epsilon_{i t}
+$$
+where
+
++ $y_{i t}$ is the vaccine uptake of Health Trust $i$  at time $t$;
+
++ $T_{i t}$ is the treatment of interest, i.e. the exposure to the newspaper campaing in Health Trust $i$ at time $t$. 
+
++ Specifically, $T_{i t}$ equals 1 if the observation’s periods relative to the group i’s first treated period is the same value as k; 0 otherwise (and 0 for all never-treated groups).
+
++ $T_{0}$ and $T_{1}$ are the lowest and highest periods relative to treatment; i.e., if we have data 5 years prior treatment then $T_{0} = -5$.
+
++ $\eta_{i}$ is a vector of fixed effects (dummies) for each unit $i$
+
++ $\delta_{t}$ is a vector of fixed effects (dummies) for each time $t$
+
++ $\varepsilon_{i t}$ is the error. 
+
++ $x_i$ is a covariate for each unit $i$
+
+
+\begin{centering}
+
+\emph{Standard Errors}
+
+\end{centering}
+
+In this setting, the variability of vaccine uptake is expected to be unequal depending on the exposure to misinformation. Also, since we examine districts within a country, the communities are likely related. Due to the previous characteristics, we propose three methods for robustness: \bigskip
+
+**1. Robust standard errors** to deal with the variability of vaccine uptake, i.e., heteroskedasticity. However, clustering is the usual approach to adjusting the inference. \bigskip
+
+**2. Clustered standard errors**  would be ideal for treating the variability across districts; nevertheless, due to the few clusters (health trusts) and observations, the conventional asymptotic inference and clustering methods might not be suitable.\bigskip
+
+**3. Wild-Bootstrap**  is an alternative to provide robustness to the test. The wild bootstrap is implemented for regression models with heteroskedasticity of unknown form, and it has been extended to models estimated where the error terms are multi-way clustered^[ \tiny MacKINNON, "Bootstrap Methods in Econometrics*".]. Although, Wild-Bootstrap is suitable either with a "large" number of clusters or when the number of clusters is "small," and the observations per cluster are "large" ^[ \tiny Canay, Santos, y Shaikh, 2021 «The Wild Bootstrap with a "Small" Number of "Large" Clusters».]; two conditions that the data doesn't meet.\bigskip
+
+Even though neither of the methods is a perfect fit for the inference, the patterns of the estimations will give us insights into the validity of the effect of interest.
+
+\clearpage
+
+
+## 5. Main Results
+
+```{r dd_dynamic, include = FALSE}
+
+rm(dd_classic_1, dd_classic_2, yt_post, yt_pre, coeff_after, coeff_before, dd,sdt_pre,sdt_post)
+
+# ======================
+# Calculates Dynamic DD
+# ======================
+
+# =====================
+# 1) Prepares formulas
+# =====================
+
+base_wild <- as.formula(paste( paste("uptake ~", paste( paste(paste("treat_", 1:12, sep = ""), collapse = " + "), d_cov , sep = " + " ) ), " | trust"  ))
+  
+  base_lm <- as.formula( paste( paste("uptake ~", paste( paste(paste("treat_", 1:12, sep = ""), collapse = " + "), m_cov , sep = " + " ) ), d_cov, sep = " + "  ) )
+  
+  base_lm_robust <- as.formula( paste( paste("uptake ~", paste( paste(paste("treat_", 1:12, sep = ""), collapse = " + "),d_cov, sep = " + " ) )) )
+  
+  
+  num <- c(-2,-1, 1:10)
+  
+# =====================
+# 2) Perform estimations
+# =====================
+  
+    # I) Robust Errors
+    # -----------------
+  
+    # Set the linear model
+  
+      dd_lm <- lm(base_lm, data = dd_uptake )
+    
+    # Make the test of robust se
+    
+      dd_robust <- coeftest(dd_lm, vcov = vcovHC(dd_lm, type = "HC0"))
+      
+    # Gather the results in a data frame
+    
+    dd_robust <- tibble( Coefficient = row.names(dd_robust) , Estimate = dd_robust[,1], Std.Error = dd_robust[,2], t.value = dd_robust[,3], 'Pr(>|t|)' =  dd_robust[,4])
+    
+    # Define the significance codes
+  
+      codes <- "Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1"
+    
+    # Add the significance stars and rename term variables
+    
+      dd_robust <- dd_robust[ -(14:26), ] %>% 
+              # Changes term variables
+              mutate( Coefficient = c( dd_robust$Coefficient[1], paste( "treat_[", num, "]", sep = ""), dd_robust$Coefficient[27:38])) %>% 
+              mutate( `Pr(>|t|)` = round( `Pr(>|t|)`, digits = 3)) %>% 
+              #Adds significance stars
+                mutate( `Pr(>|t|)` = case_when(
+                  `Pr(>|t|)` <= 0.001 ~ paste( `Pr(>|t|)`, "***", sep = " "),
+                  `Pr(>|t|)` <= 0.01 &  `Pr(>|t|)` > 0.001 ~ paste( `Pr(>|t|)`, "**", sep = " "),
+                  `Pr(>|t|)` > 0.01 &  `Pr(>|t|)` <= 0.05  ~ paste(  `Pr(>|t|)`, "**", sep = " "),
+                   `Pr(>|t|)` > 0.05 &  `Pr(>|t|)` <= 0.1  ~ paste(  `Pr(>|t|)`, ".", sep = " "),
+                  `Pr(>|t|)` > 0.1 ~ paste(  `Pr(>|t|)` )
+                ) ) 
+    
+    # II) clustered Standard errors
+    # -----------------------
+      
+      dd_clust <- lm_robust( base_lm_robust, data = dd_uptake, fixed_effects = trust, cluster = trust)
+    
+      wales_plot <- tibble(
+        sd = c(dd_clust$std.error[1:2],0,dd_clust$std.error[3:12]) ,
+        coeff = round( c(dd_clust$coefficients[1:2],0,dd_clust$coefficients[3:12]), digits = 2),
+        c_low = c(dd_clust$conf.low[1:2],0,dd_clust$conf.low[3:12]),
+        c_high =  c(dd_clust$conf.high[1:2],0,dd_clust$conf.high[3:12]),
+        year = -2:10)
+  
+      wales_plot <- wales_plot %>% 
+        ggplot(aes(x = year, y = coeff)) + 
+        geom_point( color = "#294f90") +
+        geom_hline(yintercept = 0) +
+        geom_errorbar(aes(ymin = c_low, ymax = c_high), width = 0.3,
+                      position = position_dodge(0.05), color = "#294f90") +
+        geom_vline(xintercept = 0, linetype = "dashed") +
+        theme_light() +
+        labs(y = "Estimates and 95% Confidence ", 
+             x = "Time relative to treatment", 
+             title = "Figure 4: There's a significant negative effect of misinformation \n on vaccine uptake",
+             subtitle = "Magnitud of the point estimates on MMR vaccine Uptake ",
+             caption = " Clustered standard errors ",
+             colour = NULL) +
+        # Sets y axis breaks
+        scale_y_continuous(breaks = seq(-20, 10, by = 5),  labels = percent_format(scale = 1) ) +
+        scale_x_continuous(breaks = seq(-2, 10, by =2 ) )  +
+        # Sets x axis breaks for dates
+        theme(
+          # Removes both grids
+          panel.grid.minor = element_blank(), 
+          # Adds horizontal lines in grid
+          panel.grid.major = element_line(color = "grey",
+                                            size = 0.4,
+                                            linetype = 3),
+          # Alligns verticaly x axis labels
+          axis.text.x = element_text(vjust = 0.5, size = 10),
+          axis.title.y=element_text(size=12),
+          legend.title = element_blank(),
+          plot.title = element_text(face = "bold", colour = "Black", size = 12, vjust = 3),
+          plot.subtitle = element_text( size = 10),
+          panel.border = element_rect(color = "black", size = 1))
+      
+    # III) Wild bootstrap
+    # -----------------------
+  
+    dd_wild <- feols( base_wild,  
+    		  cluster = ~trust,   ## Cluster by Health Trust
+    		  data = dd_uptake)   ## Data
+      
+    wild_boot <- function(dd_wales){
+        term <- NULL
+        estimate <- NULL
+        statistic <- NULL
+        p.value <- NULL
+        conf.low <-  NULL
+        conf.high <- NULL 
+        
+        
+        for( j in 1:12){
+          
+          par <- paste( "treat_", j, sep = "")
+          
+          boot <- boottest(dd_wales, clustid = "trust", bootcluster = "trust", type = "webb", param = par,  B = 9999, seed = 420)
+          
+          term <- c( term, par)
+          estimate <- c( estimate, boot$point_estimate)
+          statistic <- c( statistic, boot$t_stat)
+          p.value <- c( p.value, boot$p_val)
+          conf.low <-  c( conf.low, boot$conf_int[1])
+          conf.high <-  c( conf.high, boot$conf_int[2])
+          
+        }
+        
+        
+        boot_data <- data.frame(term , estimate  , statistic , p.value , conf.low , conf.high )
+        
+        return(boot_data)
+        
+    }
+    
+    boot_data <- wild_boot(dd_wild)
+    
+    
+    boot_data <- boot_data %>% 
+                mutate( term = paste( "treat_[", num, "]", sep = "")) 
+
+```
+
+\begin{centering}
+
+\emph{I. Robust Standard Errors}
+
+\end{centering}
+
+In Table 2, we report the first robustness check results. The coefficients called "treat_"  are the effect of misinformation in percentage at the time relative to treatment; the rest are the effect of the proxy of higher literacy in mothers as a percentage. \bigskip
+
+
+```{r table_1, echo = FALSE}
+a <- kable(list(dd_robust[1:13,], dd_robust[14:25, ]), format = "latex", digits = 3,  booktabs = TRUE, caption = "Dynamic Difference in Difference")
+```
+\begin{table}[h]
+\caption{Dynamic Difference in Difference}
+\centering
+\scriptsize
+\begin{tabular}[t]{lrrrl}
+\toprule
+Coefficient & Estimate & Std.Error & t.value & Pr(>|t|)\\
+\midrule
+(Intercept) & 83.635 & 0.818 & 102.198 & 0 ***\\
+treat\_[-2] & 0.968 & 0.769 & 1.260 & 0.21\\
+treat\_[-1] & 0.968 & 0.769 & 1.260 & 0.21\\
+treat\_[1] & 3.602 & 1.123 & 3.207 & 0.002 **\\
+treat\_[2] & -0.649 & 0.801 & -0.810 & 0.419\\
+\addlinespace
+treat\_[3] & 2.840 & 1.032 & 2.752 & 0.007 **\\
+treat\_[4] & -0.953 & 0.784 & -1.215 & 0.226\\
+treat\_[5] & -7.939 & 0.791 & -10.036 & 0 ***\\
+treat\_[6] & -6.001 & 1.109 & -5.412 & 0 ***\\
+treat\_[7] & -5.576 & 0.878 & -6.347 & 0 ***\\
+\addlinespace
+treat\_[8] & -8.897 & 0.967 & -9.199 & 0 ***\\
+treat\_[9] & -12.146 & 1.152 & -10.548 & 0 ***\\
+treat\_[10] & -9.251 & 0.818 & -11.305 & 0 ***\\
+\addlinespace
+female\_students:d\_1 & 1.153 & 0.107 & 10.760 & 0 ***\\
+female\_students:d\_2 & 1.153 & 0.107 & 10.760 & 0 ***\\
+female\_students:d\_3 & 1.046 & 0.129 & 8.141 & 0 ***\\
+female\_students:d\_4 & 0.704 & 0.167 & 4.205 & 0 ***\\
+female\_students:d\_5 & 0.939 & 0.113 & 8.320 & 0 ***\\
+female\_students:d\_6 & 0.704 & 0.152 & 4.622 & 0 ***\\
+\addlinespace
+female\_students:d\_7 & 0.610 & 0.110 & 5.552 & 0 ***\\
+female\_students:d\_8 & 0.230 & 0.111 & 2.071 & 0.04 **\\
+female\_students:d\_9 & 0.176 & 0.165 & 1.064 & 0.289\\
+female\_students:d\_10 & -0.270 & 0.126 & -2.137 & 0.034 **\\
+female\_students:d\_11 & 0.098 & 0.141 & 0.691 & 0.491\\
+female\_students:d\_12 & 0.123 & 0.172 & 0.713 & 0.477\\
+\bottomrule
+\end{tabular}
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+\end{table}
+
+
+First, we notice that a year after the misinformation campaign (treat_4), there is a significant and consistent negative effect on vaccine uptake. The most severe effect was an approximately -12.146 % decrease in vaccine uptake; yet, the standard errors might not be as small due to health trust relations. \bigskip
+
+Second, the proxy of higher literacy has a small persistent positive effect on vaccine uptake within the first years after the treatment. The only discrepancy is two years after treatment with a negative estimate, but the confidence interval shows that the negative effect is practically zero. \bigskip
+
+
+The first approach suggests that the misinformation campaign did harm the vaccine uptake rate of the MMR vaccine. Further, the point estimates are consistent with the negative effect; even with additional robustness checks of the standard errors, the insight of the potential harm is alarming enough. \bigskip
+
+
+
+\begin{centering}
+
+\vspace{1cm}
+\emph{II. Clustered Standard Errors}
+
+\end{centering}
+
+We proceed with the second robustness check, the usual approach with clustered standard errors. The clusters are defined as the Health Trusts; Health Trusts in Wales cover different districts of Wales, which means that the people that attend a specific Health Trust live close enough to be a part of a similar community. We present the main findings in Figure 4.
+
+```{r , echo = FALSE}
+wales_plot
+
+```
+There are two main features of Figure 4:
+
+1. The pre-treatment coefficients are nearly on the zero line with small standard errors. The nearly zero coefficients imply a precisely estimated zero difference between Health Trusts in the two groups before the misinformation campaign. \bigskip
+
+2. A year after treatment, the effect of misinformation on vaccine uptakes becomes significantly negative; even with wider confidence intervals, the previous insights remain: misinformation harmed. 
+
+However, it is important to notice that there are only 14 Health Trusts available in the data, which means that the number of clusters is not "large" enough for the method to be suitable. This nuance leads us to our third robustness check, the Wild-Bootstrap.
+\clearpage
+
+
+\begin{centering}
+
+\emph{III. Wild-Bootstrap}
+
+\end{centering}
+
+```{r , echo = FALSE}
+b <- kable(boot_data, format = "latex", digits = 3,  booktabs = TRUE, caption = "Wild Bootstrap Estimates")
+```
+
+As a final robustness check, we implement the Wild bootstrap. The standard specification is as follows: For a model with independent but possibly heteroskedastic errors, the wild bootstrap data generating process is
+$$
+y_{t}^{*}=\boldsymbol{X}_{t} \hat{\boldsymbol{\beta}}+f\left(\hat{u}_{t}\right) v_{t}^{*},
+$$
+where $f\left(\hat{u}_{t}\right)$ is a transformation of the $t^{\text {th }}$ residual $\hat{u}_{t}$, and $v_{t}^{*}$ is a random variable with mean 0 and variance 1. One possible choice for $f\left(\hat{u}_{t}\right)$ is 
+$$
+f\left(\hat{u}_{t}\right)=\frac{\hat{u}_{t}}{\left(1-h_{t}\right)^{1 / 2}}
+$$
+where $h_{t}$ is the $t^{\text {th }}$ diagonal of the "hat matrix".
+
+To specify the distribution of the $v_{t}^{*}$, we use the simplest:
+$$
+v_{t}^{*}=1 \text { with probability } \frac{1}{2} ; \quad v_{t}^{*}=-1 \text { with probability } \frac{1}{2} .
+$$
+The main results are reported in Table 3.
+
+
+\begin{table}[h]
+
+\caption{Wild Bootstrap Estimates}
+\centering
+\scriptsize
+\begin{tabular}[t]{lrrrrr}
+\toprule
+term & estimate & statistic & p.value & conf.low & conf.high\\
+\midrule
+treat\_[-2] & 0.968 & 2.347 & 0.465 & -13.123 & 13.544\\
+treat\_[-1] & 0.968 & 2.347 & 0.465 & -13.123 & 13.544\\
+treat\_[1] & 3.602 & 3.652 & 0.358 & -29.283 & 27.442\\
+treat\_[2] & -0.649 & -0.829 & 0.525 & -29.618 & 22.648\\
+treat\_[3] & 2.840 & 4.159 & 0.364 & -19.160 & 22.004\\
+\addlinespace
+treat\_[4] & -0.953 & -1.291 & 0.429 & -26.600 & 18.725\\
+treat\_[5] & -7.939 & -7.049 & 0.293 & -49.398 & 27.292\\
+treat\_[6] & -6.001 & -3.860 & 0.527 & -71.812 & 50.090\\
+treat\_[7] & -5.576 & -4.493 & 0.334 & -53.618 & 39.729\\
+treat\_[8] & -8.897 & -6.951 & 0.415 & -59.541 & 37.987\\
+\addlinespace
+treat\_[9] & -12.146 & -7.381 & 0.442 & -75.920 & 43.435\\
+treat\_[10] & -9.251 & -8.419 & 0.252 & -49.245 & 28.824\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+In contrast with the previous method, the Wild Bootstrap suggests no significant effect or harm regarding misinformation. Nevertheless, recall that the method is suitable with "few" clusters that are "large" enough, implying that the damage is plausible in this setting. Then again, the insight of the potential harm is alarming enough.
+
+
+\clearpage
+
+# 5. Bibliography
+
+\scriptsize
+
+
+
++ Britannica. “Ethnicity | Social Differentiation | Britannica”. Consultado el 5 de abril de 2022. https://www.britannica.com/topic/ethnicity.
+
++ Canay, Ivan A., Andres Santos, y Azeem M. Shaikh. «The Wild Bootstrap with a “Small” Number of “Large” Clusters». The Review of Economics and Statistics 103, n.o 2 (14 de mayo de 2021): 346-63. https://doi.org/10.1162/rest_a_00887.
+
++ «Dataset Selection - Query - Nomis - Official Labour Market Statistics». Accedido 17 de marzo de 2022. https://www.nomisweb.co.uk/query/select/getdatasetbytheme.asp?opt=3&theme=&subgrp=.
+
++ European Observatory on Health Systems and Policies, Martin McKee, Walter Ricciardi, Luigi Siciliani, Bernd Rechel, Veronica Toffolutti, David Stuckler, Alessia Melegaro, y Jan C. Semenza. «Increasing Vaccine Uptake: Confronting Misinformation and Disinformation». Eurohealth 24, n.º 3 (2018): 35-38. https://apps.who.int/iris/handle/10665/332602.
+
++ Forster, Alice S., Lauren Rockliffe, Amanda J. Chorley, Laura A. V. Marlow, Helen Bedford, Samuel G. Smith, y Jo Waller. “Ethnicity-Specific Factors Influencing Childhood Immunisation Decisions among Black and Asian Minority Ethnic Groups in the UK: A Systematic Review of Qualitative Research”. J Epidemiol Community Health 71, núm. 6 (el 1 de junio de 2017): 544–49. https://doi.org/10.1136/jech-2016-207366.
+
++ Forshaw, Jennifer, Sarah M. Gerver, Moneet Gill, Emily Cooper, Logan Manikam, y Helen Ward. «The global effect of maternal education on complete childhood vaccination: a systematic review and meta-analysis». BMC Infectious Diseases 17, n.º 1 (28 de diciembre de 2017): 801. https://doi.org/10.1186/s12879-017-2890-y.
+
++ Garett, Renee, y Sean D. Young. «Online Misinformation and Vaccine Hesitancy». Translational Behavioral Medicine 11, n.º 12 (14 de diciembre de 2021): 2194-99. https://doi.org/10.1093/tbm/ibab128.
+
++ Harmsen, Irene A., Robert A. C. Ruiter, Theo G. W. Paulussen, Liesbeth Mollema, Gerjo Kok, y Hester E. de Melker. «Factors That Influence Vaccination Decision-Making by Parents Who Visit an Anthroposophical Child Welfare Center: A Focus Group Study». Advances in Preventive Medicine 2012 (2012): 175694. https://doi.org/10.1155/2012/175694.
+
++ Khairat, Saif, Baiming Zou, y Julia Adler-Milstein. «Factors and Reasons Associated with Low COVID-19 Vaccine Uptake among Highly Hesitant Communities in the US». American Journal of Infection Control 50, n.º 3 (1 de marzo de 2022): 262-67. https://doi.org/10.1016/j.ajic.2021.12.013.
+
++ Loomba, Sahil, Alexandre de Figueiredo, Simon J. Piatek, Kristen de Graaf, y Heidi J. Larson. «Measuring the Impact of COVID-19 Vaccine Misinformation on Vaccination Intent in the UK and USA». Nature Human Behaviour 5, n.º 3 (marzo de 2021): 337-48. https://doi.org/10.1038/s41562-021-01056-1.
+
++ Lyu, Hanjia, Zihe Zheng, y Jiebo Luo. «Misinformation versus Facts: Understanding the Influence of News Regarding COVID-19 Vaccines on Vaccine Uptake». Health Data Science 2022 (12 de marzo de 2022). https://doi.org/10.34133/2022/9858292.
+
++ Mason, B., y P. Donnelly. «Impact of a local newspaper campaign on the uptake of the measles mumps and rubella vaccine». Journal of Epidemiology and Community Health 54, n.º 6 (junio de 2000): 473-74. https://doi.org/10.1136/jech.54.6.473.
+
++ McCartney, Margaret. «MMR, Measles, and the South Wales Evening Post». BMJ 346 (22 de abril de 2013): f2598. https://doi.org/10.1136/bmj.f2598.
+
++ MacKINNON, James G. “Bootstrap Methods in Econometrics*”. Economic Record 82, núm. s1 (septiembre de 2006): S2–18. https://doi.org/10.1111/j.1475-4932.2006.00328.x.
+
++ Meikle, James. «Measles Outbreak Sees “missing Generation” Queuing for MMR Jab». The Guardian, 17 de abril de 2013, sec. Society. https://www.theguardian.com/society/2013/apr/17/measles-outbreak-mmr-jab.
+
++ Pierri, Francesco, Brea Perry, Matthew R. DeVerna, Kai-Cheng Yang, Alessandro Flammini, Filippo Menczer, y John Bryden. «The impact of online misinformation on U.S. COVID-19 vaccinations». arXiv:2104.10635 [physics], 1 de mayo de 2021. http://arxiv.org/abs/2104.10635.
+
++ Singh, Karandeep, Gabriel Lima, Meeyoung Cha, Chiyoung Cha, Juhi Kulshrestha, Yong-Yeol Ahn, y Onur Varol. «Misinformation, Believability, and Vaccine Acceptance over 40 Countries: Takeaways from the Initial Phase of the COVID-19 Infodemic». PLOS ONE 17, n.º 2 (9 de febrero de 2022): e0263381. https://doi.org/10.1371/journal.pone.0263381.
+
++ Statista. “UK Average Age of Mothers 2020”. Consultado el 5 de abril de 2022. https://www.statista.com/statistics/294590/average-age-of-mothers-uk/.
+
++ BBC News. «Swansea Measles Epidemic: Worries over MMR Uptake after Outbreak», 10 de julio de 2013, sec. Wales politics. https://www.bbc.com/news/uk-wales-politics-23244628.
+
++ «UK loses WHO measles elimination status, but cases remain low in Wales - Public Health Wales». Accedido 17 de marzo de 2022. https://phw.nhs.wales/news/uk-loses-who-measles-elimination-status-but-cases-remain-low-in-wales/.
+
++ Wilson, Steven Lloyd, y Charles Wiysonge. «Social Media and Vaccine Hesitancy». BMJ Global Health 5, n.º 10 (1 de octubre de 2020): e004206. https://doi.org/10.1136/bmjgh-2020-004206.
+
+
+
+
+
